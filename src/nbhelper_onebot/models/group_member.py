@@ -6,6 +6,7 @@ from nonebot.adapters.onebot.v11 import Bot
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..configs import nbconfig
+from ..obapi import get_group_member_info
 
 
 class GroupMember(BaseModel):
@@ -47,9 +48,7 @@ class GroupMember(BaseModel):
 
     async def fetch_full_member_info(self, bot: Bot) -> "GroupMember":
         """从QQ服务器获取完整的群成员信息"""
-        member_info = await bot.call_api(
-            "get_group_member_info", group_id=self.group_id, user_id=self.user_id
-        )
+        member_info = await get_group_member_info(bot, group_id=self.group_id, user_id=self.user_id)
         if not member_info:
             raise ValueError(
                 f"Failed to fetch member info for user_id {self.user_id} in group {self.group_id}."
@@ -59,12 +58,7 @@ class GroupMember(BaseModel):
 
     async def fetch_full_member_info_without_cache(self, bot: Bot) -> "GroupMember":
         """从QQ服务器获取完整的群成员信息，不使用缓存"""
-        member_info = await bot.call_api(
-            "get_group_member_info",
-            group_id=self.group_id,
-            user_id=self.user_id,
-            no_cache=True,
-        )
+        member_info = await get_group_member_info(bot, group_id=self.group_id, user_id=self.user_id, no_cache=True)
         if not member_info:
             raise ValueError(
                 f"Failed to fetch member info for user_id {self.user_id} in group {self.group_id}."

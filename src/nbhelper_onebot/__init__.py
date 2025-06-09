@@ -4,9 +4,10 @@ from pathlib import Path
 
 from cachetools import TTLCache
 from nonebot import get_driver, logger
-from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent
+from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, GroupMessageEvent
 
 from .configs import NBHelperConfig, nbconfig
+from .obapi import get_group_file_url
 from .social import SocialManager
 from .utils import download, download_async, ensure_dir, has_file
 
@@ -85,13 +86,24 @@ class NBHelper:
             return True
 
     @staticmethod
-    def has_image(msg: Message | MessageEvent) -> bool:
+    def has_image_segment(msg: Message | MessageEvent) -> bool:
         """检查消息中是否包含图片类型的元素"""
         if isinstance(msg, MessageEvent):
             msg = msg.message
         # 遍历消息，找到其中的图片类型元素
         for segment in msg:
             if segment.type == "image":
+                return True
+        return False
+
+    @staticmethod
+    def has_file_segment(msg: Message | MessageEvent) -> bool:
+        """检查消息中是否包含文件类型的元素"""
+        if isinstance(msg, MessageEvent):
+            msg = msg.message
+        # 遍历消息，找到其中的文件类型元素
+        for segment in msg:
+            if segment.type == "file":
                 return True
         return False
 
@@ -173,6 +185,30 @@ class NBHelper:
 
         # 过滤掉下载失败的情况（None）
         return [file_path for file_path in downloaded_files if file_path is not None]
+
+    async def download_group_file(self, event: GroupMessageEvent) -> Path | None:
+        """下载消息中的文件，返回下载的文件路径，如果没有文件则返回None"""
+        logger.debug(f"Downloading file from message: {event.message_id}.")
+        # 遍历消息，找到其中的文件类型元素并下载
+        if self.has_file_segment(event):
+            for segment in event.message:
+                if segment.type == "file":
+                    file = segment.data["file"]  # 获取文件的文件名称
+                    file_id = segment.data["file_id"]  # 获取文件的文件信息
+                    # 　检查文件是否已存在
+                    if not has_file(file, self.config.download_path):
+                        url = await get_group_file_url(event.group_id, file_id)
+                        if not url:
+                            logger.error(f"Failed to get file URL for {file}.")
+                            return None
+                        file_path = await download_async(url, self.config.download_path, file)
+                        if file_path:
+                            logger.debug(f"Downloaded file: {file_path}.")
+                            return file_path
+                        else:
+                            logger.error(f"Failed to download file: {file}.")
+                    break
+        return None
 
     def get_social(self, bot: Bot | str | int):
         """获取指定Bot的社交管理类"""

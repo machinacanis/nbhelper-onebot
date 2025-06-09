@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from .configs import nbconfig
 from .errors import FetchError
 from .models import Friend, Group, GroupMember, GroupMembers
+from .obapi import get_group_list, get_friend_list, delete_friend, get_group_member_list, set_group_leave
 
 
 class Social(BaseModel):
@@ -33,17 +34,17 @@ class Social(BaseModel):
 
     async def update_all_friends(self) -> None:
         """更新好友列表"""
-        friend_list = await self._bot.call_api("get_friend_list")
+        friend_list = await get_friend_list(self._bot)
         self.friends = [Friend(**f) for f in friend_list]
 
     async def update_all_friends_without_cache(self) -> None:
         """更新好友列表，不使用缓存"""
-        friend_list = await self._bot.call_api("get_friend_list", no_cache=True)
+        friend_list = await get_friend_list(self._bot, no_cache=True)
         self.friends = [Friend(**f) for f in friend_list]
 
     async def update_all_groups(self) -> None:
         """更新群列表"""
-        group_list = await self._bot.call_api("get_group_list")
+        group_list = await get_group_list(self._bot)
         groups = [Group(**g) for g in group_list]
         # 异步获取每个群的成员列表
         tasks = [self.fetch_member_list(group) for group in groups]
@@ -57,7 +58,7 @@ class Social(BaseModel):
 
     async def update_all_groups_without_cache(self) -> None:
         """更新群列表，不使用缓存"""
-        group_list = await self._bot.call_api("get_group_list", no_cache=True)
+        group_list = await get_group_list(self._bot, no_cache=True)
         groups = [Group(**g) for g in group_list]
         tasks = [self.fetch_member_list_without_cache(group) for group in groups]
         member_lists = await asyncio.gather(*tasks)
@@ -112,13 +113,9 @@ class Social(BaseModel):
             if not isinstance(friends, list):
                 friends = [friends]
             for friend in friends:
-                res = await self._bot.call_api(
-                    "delete_friend",
-                    user_id=self._bot.self_id,
-                    friend_id=friend.user_id if isinstance(friend, Friend) else int(friend),
-                    temp_block=temp_block,
-                    temp_both_del=temp_both_del,
-                )
+                res = await delete_friend(self._bot,
+                                          friend_id=friend.user_id if isinstance(friend, Friend) else int(friend),
+                                          temp_block=temp_block, temp_both_del=temp_both_del)
                 if res["result"] == 0:
                     # 删除成功后从缓存中移除好友
                     if isinstance(friend, Friend):
@@ -138,8 +135,8 @@ class Social(BaseModel):
     async def fetch_member_list(self, group: Group | int | str):
         """从QQ服务器获取群成员列表"""
         # 使用缓存获取群成员列表
-        member_list = await self._bot.call_api(
-            "get_group_member_list", group_id=group.group_id if isinstance(group, Group) else int(group)
+        member_list = await get_group_member_list(
+            self._bot, group_id=group.group_id if isinstance(group, Group) else int(group)
         )
         if member_list:
             # 将获取到的成员列表转换为GroupMembers对象
@@ -150,10 +147,8 @@ class Social(BaseModel):
 
     async def fetch_member_list_without_cache(self, group: Group | int | str):
         """从QQ服务器获取群成员列表，不使用缓存"""
-        member_list = await self._bot.call_api(
-            "get_group_member_list",
-            group_id=group.group_id if isinstance(group, Group) else int(group),
-            no_cache=True,
+        member_list = await get_group_member_list(
+            self._bot, group_id=group.group_id if isinstance(group, Group) else int(group), no_cache=True
         )
         if member_list:
             # 将获取到的成员列表转换为GroupMembers对象
@@ -162,10 +157,9 @@ class Social(BaseModel):
         else:
             raise FetchError("Failed to fetch member list for group.")
 
-    async def leave_group(self, group: Group | int | str) -> bool:
+    async def leave_group(self, group: Group | int | str) -> None:
         """退出群聊"""
-        res = await self._bot.call_api("set_group_leave",
-                                       group_id=group.group_id if isinstance(group, Group) else int(group))
+        await set_group_leave(self._bot, group_id=group.group_id if isinstance(group, Group) else int(group))
         # 从缓存中移除群信息
         group_id = group.group_id if isinstance(group, Group) else int(group)
         self._social_cache.pop(f"group_{group_id}", None)
